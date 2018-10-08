@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Welcome to Jekyll!"
+title:  "Welcome to Chaws' Jekyll!"
 date:   2018-10-03 07:41:10 -0300
 categories: jekyll update
 ---
