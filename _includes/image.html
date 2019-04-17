@@ -1,0 +1,19 @@
+{%- comment -%}
+
+Parameters:
+  path
+  caption
+  left
+{%- endcomment -%}
+
+{% capture fig_img %}
+  /images/{{ include.path }}
+{% endcapture %}
+
+{% if include.css %}
+  <img src="{{ fig_img }}" style="{{ include.css }}" alt="{{ include.caption }}">
+{% else %}
+  <img src="{{ fig_img }}" alt="{{ include.caption }}">
+{% endif %}
+
+<figcaption style="text-align: center; font-weight: bold;"> {{ include.caption  }} </figcaption>
