@@ -2,17 +2,16 @@
 layout: post
 title:  "Compiling U-Boot for Raspberry Pi 3"
 date:   2019-04-16 07:41:10 -0300
-categories: jekyll update
+categories: en
 ---
 
-This post is an improvement of [this one][original-post]. I changed some bits and pieces that I found a bit confusing on the original post.
+This post is an improvement of [this one][original-post]. I changed some bits and pieces I found a bit confusing on the original post.
 
 # Introduction
 
 U-Boot is a multi-platform, open-source, universal boot-loader with comprehensive support for loading and managing boot images, such as the Linux kernel. This article is a quick start up guide on porting U-Boot for Raspberry Pi 3 (RPi3) board using an SD card.
 
 This tutorial is intended for getting u-boot up and running on a raspberry pi 3 model b. Hopefully I'll be posting another tutorial showing how to boot a kernel image using u-boot.
-
 
 # Requirements
 
@@ -36,61 +35,42 @@ The third stage bootloader - **start.elf** - is where all the action happens. It
 
 ### Stage 4
 
-We will use **config.txt** to tell **start.elf** to load a kernel image. We'll use our compiled **u-boot.bin** to pass as kernel image. This is the first thing that runs on the ARM processor. Our config.txt will look as:
+By default, **config.txt** does not point to any kernel image, as **start.elf** is already prepared to load any file named *kernel.img*. So in order to trick **start.elf** into loading the U-Boot image instead, we'll use our compiled **u-boot.bin** to pass as kernel image. This is the first thing that runs on the ARM processor. Our config.txt will look as:
 
     kernel = u-boot.bin
 
-After completing above steps Booting is completed and RPI board is ready to take a commands from user.
+After completing above steps Booting is completed and RPI board is ready to take a commands from user by using U-Boot.
 
-# Formatting the SD card
+# <a id="formatting-the-sd-card"></a>Formatting the SD card
 
-Stick the SD card on your computer and make sure it is not mounted before continuing steps below.
+I chose to change this part of the tutorial because the original one didn't get u-boot to recognized all the memory in my RPi3. U-boot was only showing 128M, instead of 1G. I looked other tutorials trying to figure out what I did wrong, but nothing worked. Luckily, I tried something super dumb that got it working alright! It turns out that if you just get the basic files needed for RPi3 to boot, it won't fully map all the hardware, so it needs all necessary *.elf* files that comes in the original raspbian image from the official raspberry pi website. 
 
+To accomplish that, go to the official raspbian download page at [https://www.raspberrypi.org/downloads/raspbian/](https://www.raspberrypi.org/downloads/raspbian/) and download the "Lite" version. This is what I'd tried. Although I didn't try on other versions, I imagine that all packages will contain the necessary boot files.
 
-    $ sudo fdisk /dev/mmcblk0
+	$ wget https://downloads.raspberrypi.org/raspbian_lite_latest -O raspbian-strech-lite.zip
+	$ unzip raspbian-strech-lite.zip # this will extract a *.img file
+	$ sudo dd if=raspbian-strech-lite.img of=/dev/mmcblk0 bs=4M conv=fsync
 
+**NOTE: in this tutorial, I'm using Debian 9, which recognized the SD card as */dev/mmcblk0*, it may be different on your set up.**
 
-You'll want to remove any other partitions that may previously existed in your card. After deleting partitions, it's time to create a brand new one using the entire SD card. Once the new partition is created, mark it as FAT32 and later turn on the boot flag. All that can be accomplished by running the following commands within *fdisk*:
-
-     - d # repeat that untill all partitions are removed
-     - n # start creating a new partition
-        - p # mark new partition as primary
-        - [enter] # keep the defaults for all options
-     - a # turn on boot flag for the partition just created
-     - t # change partition type, select the option that contains FAT32 type
-     - w # writes all changes to SD card
-
-After creating the new partition, it's time to create a FAT32 file system on the SD card:
-
-    $ sudo mkfs.vfat -F 32 -n boot /dev/mmcblk0p1
-
-**NOTE: in this tutorial, I'm using Debian 9, which recognized the SD card as */dev/mmcblk0* and the partition as */dev/mmcblk0p1*, which may be different on your set up.**
-
-Once formatting is done, mount the SD card in some folder or just unplug and plug it back on so that it will be automatically mounted to a folder.
-
+The last command, `dd` can take a while to execute, depending on your SD card speed. At current date, raspbian image is around 350M, so be patient. Once it's done, just unplug and plug it back. This will mount two partitions: a boot and a file system. We want to focus on the boot partition of your SD card, so keep that in mind for the next steps.
 
 # Compiling
 
-We'll need a compiler and a cross compiler in order to get u-boot compiled to run on a raspberry.
+We need a 64 bit compiler and a cross compiler for, well, get u-boot compiled!
 
-    $ sudo apt install gcc-arm-linux-gnueabi
+    $ sudo apt install gcc-aarch64-linux-gnu # last one is for 64bits compilation
 
-Get the source code by cloning the U-Boot git repository :
+Get the source code by cloning [Stephen Warren's work-in-progress](https://elinux.org/RPi_U-Boot#Stephen_Warren's_work-in-progress_branch) raspberry pi U-Boot git repository:
 
-    $ git clone -depth 1 -branch v2017.11 git://git.denx.de/u-boot.git v2017.11
-    $ echo -e '\n#define CONFIG_CMD_BOOTZ' >> v2017.11/include/configs/rpi.h # enables bootz command for u-boot
-    $ sudo make -C v2017.11/ CROSS_COMPILE=aarch64-linux-gnu- rpi_3_defconfig
-    $ sudo make -C v2017.11/ CROSS_COMPILE=aarch64-linux-gnu-
+    $ git clone --depth 1 --branch rpi_dev https://github.com/swarren/u-boot u-boot
 
-Many new files must have been generated. The important one to look for is **u-boot.bin**. Copy that file into the SD card. Don't use *dd* command, just regular *cp* is enough.
+Compile it:
 
+	$ cd u-boot && export CROSS_COMPILE=aarch64-linux-gnu- # u-boot will understand that we want cross-compilation
+    $ make rpi_3_defconfig && make -j 8
 
-# Retrieving raspberry pi boot files
-
-You will need two files to be copied into the SD card to complement the boot process of the RPi3. Go to [raspberry pi firmware page][rpi-firmware-github] and download **bootcode.bin** and **start.elf**. Create a copy of those two files in the SD card. 
-
-    $ wget https://github.com/raspberrypi/firmware/raw/master/boot/bootcode.bin
-    $ wget https://github.com/raspberrypi/firmware/raw/master/boot/start.elf
+After compilation ran smoothly, look for **u-boot.bin**. That is the **only** file you need to copy to the boot partition of the SD card you set up in [Formatting the SD card](#formatting-the-sd-card).
 
 # Creating the configuration file
 
@@ -104,24 +84,17 @@ Now you need to create a configuration file that will tell the RPi3 how which ke
     dtparam=spi=on
     EOM
 
-This will create **config.txt**, just move it to the SD card along with the other files copied in steps above.
+This will create **config.txt**, copy that to the boot partition of the SD card you set up in [Formatting the SD card](#formatting-the-sd-card). Note that you'll be replacing the original *config.txt* that came with raspbian, but that's OK since we don't care for it now.
 
 You are done retrieving files to get u-boot started. Safely unmount the SD card and plug it into your RPi3.
-
 
 # Connecting the RPi3 to the serial port
 
 Now you need to get hacky on the hardware part of the tutorial. The two images below illustrates the schematics for a regular usb-to-serial cable adapter and the pins of a normal RPi3 model B.
 
-{% include image.html
-  path="usb_serial_scheme.png"
-  caption="Figure 1: USB-to-Serial cable adapter"
-  css="height: 333px" %}
+![USB to Serial cable adapter](/assets/usb_serial_scheme.png)
 
-{% include image.html
-  path="raspberry-pi-15b.jpg"
-  caption="Figure 2: Raspberry Pi 3 pins"
-  css="height: 500px" %}
+![Raspberry Pi 3 pinout](/assets/raspberry-pi-pinout.jpg)
 
 - Connect the **black** wire to **pin #6** (ground).
 - Connect the **white** wire to **pin #8** (RXD to TXD)
@@ -129,14 +102,13 @@ Now you need to get hacky on the hardware part of the tutorial. The two images b
 
 **NOTE: Be careful when wiring because any bad connection will prevent serial communication from happening**
 
-
 # Communicating with RPi3 through serial port
 
 You're done connecting the wires, now we need to make sure the serial connection was successfully made. Check it by running the following command then **connect the USB cable to the computer**.
 
     $ sudo dmesg -w
 
-The command above simply opens a dynamic system log viewer. Anything happening in the kernel will show up there in real time! When you connected the usb to your computer, a message like this one below should appear:
+The command above simply opens a dynamic system log viewer. Anything happening in the kernel will show up there in real time! Use the USB cable part of the serial adapter and connect to your computer, a message like this one below should appear:
 
     [142054.216068] usb 4-1.2: new full-speed USB device number 8 using ehci-pci
     [142054.324715] usb 4-1.2: New USB device found, idVendor=067b, idProduct=2303
@@ -146,7 +118,7 @@ The command above simply opens a dynamic system log viewer. Anything happening i
     [142054.325177] pl2303 4-1.2:1.0: pl2303 converter detected
     [142054.326876] usb 4-1.2: pl2303 converter now attached to ttyUSB0
 
-If you didn't see a message like that after you plugged the usb, something's wrong. Re-wire everything and make sure all connections and wires are good.
+If you didn't see a message like that after you plugged it in, something's wrong. Re-wire everything and make sure all connections and wires are good. It's also a good thing to make sure the usb part of the cable is not shorting or anything like that. These cables are cheap, prone to failure. But they're cheap :).
 
 Next, we need a way to communicate with RPi3 via serial protocol. There are plenty ways of doing so, but we'll use **minicom** in this tutorial, just because. Get it installed by running:
 
@@ -195,20 +167,27 @@ After exiting the setup menu, you should see something like:
 
 Finally, apply power to RPi3 and u-boot should start off with a message like this one below:
 
-    U-Boot 2019.01-dirty (Apr 15 2019 - 11:40:07 -0300)                          
+    U-Boot 2016.09-rc1-g8097d58931b4 (May 24 2019 - 14:46:52 -0300)              
                                                                                  
-    DRAM:  128 MiB                                                               
+    DRAM:  948 MiB                                                               
     RPI 3 Model B (0xa02082)                
-    MMC:   mmc@7e202000: 0, sdhci@7e300000: 1
-    Loading Environment from FAT... *** Warning - bad CRC, using default environment
+    boot regs: 0x00000000 0x00000000 0x00000000 0x00000000
+    MMC:   bcm2835_sdhci: 0                 
+    reading uboot.env                       
                                             
-    In:    serial                           
-    Out:   vidconsole                       
-    Err:   vidconsole
-    Net:   No ethernet found.
-    starting USB...
+    ** Unable to read "uboot.env" from mmc0:1 **
+    Using default environment
+    
+    In:    serial
+    Out:   lcd
+    Err:   lcd
+    Net:   Net Initialization Skipped
 
-And you are done!
+Note the line **DRAM: 948MiB** proving that U-Boot now recognized all available memory in the raspbery pi 3.
+
+Please email me if you had any questions regarding this tutorial. Thanks for your time and attention.
+
+Chaws
 
 [original-post]: https://pranavlavhate761157457.wordpress.com/2018/05/14/porting-of-u-boot-on-raspberrypi-3/
 [rpi-firmware-github]: https://github.com/raspberrypi/firmware/tree/master/boot
